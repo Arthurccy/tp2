@@ -15,10 +15,6 @@ class Migration(migrations.Migration):
             name='user',
             options={},
         ),
-        migrations.RemoveField(
-            model_name='user',
-            name='bio',
-        ),
         migrations.AddField(
             model_name='user',
             name='pp',

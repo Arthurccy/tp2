@@ -22,11 +22,14 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
+from articles.views import ArticleViewSet
 
 router = DefaultRouter()
+router.register(r'articles', ArticleViewSet, basename='article')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('articles/', include(articles.urls)),  # Articles directement à la racine
     path('users/', include('users.urls')),
     path('auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

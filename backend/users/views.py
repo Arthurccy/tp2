@@ -4,8 +4,18 @@ from users.decorators import api_permission_required
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.hashers import make_password
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
 from .models import User
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from .tasks import send_reset_password_email
+from .utils import generate_password_reset_link
+from django.contrib.auth import get_user_model
 import json
+
+
+User = get_user_model()
+token_generator = PasswordResetTokenGenerator()
 
 @csrf_exempt
 @api_permission_required('users.view_user', required_role='admin')
@@ -195,3 +205,74 @@ def deconnexion_user(request):
         logout(request)
         return JsonResponse({'message': 'Déconnexion réussie'}, status=200)
     return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+
+@csrf_exempt
+def demander_reset_password(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            email = data.get('email')
+            if not email:
+                return JsonResponse({'error': 'Email requis'}, status=400)
+
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                return JsonResponse({'error': 'Aucun utilisateur avec cet email'}, status=404)
+
+            # Génère le lien de réinitialisation
+            reset_link = generate_password_reset_link(user, "http://localhost:3000/reset-password")
+
+            subject = "Réinitialisation de votre mot de passe"
+            body = f"""
+                    Bonjour {user.first_name or user.username},
+
+                    Vous avez demandé la réinitialisation de votre mot de passe.
+                    Cliquez sur le lien ci-dessous pour en définir un nouveau :
+
+                    {reset_link}
+
+                    Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet e-mail.
+                    """
+            # Envoi asynchrone via Celery
+            send_reset_password_email.delay(subject, body, user.email)
+
+            return JsonResponse({'message': 'E-mail de réinitialisation envoyé'}, status=200)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'JSON invalide'}, status=400)
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+
+@csrf_exempt
+def reset_password_confirm(request, uidb64, token):
+    if request.method == 'POST':
+        from django.utils.http import urlsafe_base64_decode
+        from django.contrib.auth.tokens import default_token_generator
+        from django.contrib.auth.hashers import make_password
+
+        try:
+            data = json.loads(request.body)
+            new_password = data.get('password')
+            if not new_password:
+                return JsonResponse({'error': 'Mot de passe requis'}, status=400)
+
+            uid = urlsafe_base64_decode(uidb64).decode()
+            user = User.objects.get(pk=uid)
+
+            if not default_token_generator.check_token(user, token):
+                return JsonResponse({'error': 'Token invalide ou expiré'}, status=400)
+
+            user.password = make_password(new_password)
+            user.save()
+
+            return JsonResponse({'message': 'Mot de passe réinitialisé avec succès'}, status=200)
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+
+
+

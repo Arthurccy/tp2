@@ -21,8 +21,7 @@ from django.urls import path
 
 router = DefaultRouter()
 
-
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include(router.urls)), 
+    path('users/', include('users.urls')),
 ]

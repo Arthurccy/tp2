@@ -4,3 +4,7 @@ django-cors-headers
 python-dotenv
 psycopg2-binary
 django-redis
+celery
+billiard
+kombu
+eventlet

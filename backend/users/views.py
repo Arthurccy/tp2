@@ -1,4 +1,6 @@
 from django.http import JsonResponse
+from django.contrib.auth import authenticate, login, logout
+from users.decorators import api_permission_required
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.hashers import make_password
@@ -16,6 +18,7 @@ User = get_user_model()
 token_generator = PasswordResetTokenGenerator()
 
 @csrf_exempt
+@api_permission_required('users.view_user', required_role='admin')
 def creer_user(request):
     if request.method == 'POST':
         try:
@@ -38,6 +41,10 @@ def creer_user(request):
                 return JsonResponse({'error': 'Champs requis manquants (username, email, password)'}, status=400)
 
             password = make_password(password_raw)
+
+            if role == 'admin' or is_superuser:
+                if not request.user.is_authenticated or request.user.role != 'admin':
+                    return JsonResponse({'error': 'Seul un administrateur peut créer un utilisateur avec le rôle admin.'}, status=403)
 
             user = User.objects.create(
                 username=username,
@@ -77,14 +84,20 @@ def creer_user(request):
 
     return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
 
-
+@csrf_exempt
+@api_permission_required('users.view_user')
 def liste_users(request):
     if request.method == 'GET':
-        users = list(User.objects.values('id', 'username', 'email', 'first_name', 'last_name', 'sujet', 'pp', 'role', 'is_staff', 'is_active', 'is_superuser', 'date_joined', 'last_login'))
+        fileds = ('id', 'username', 'email', 'first_name', 'last_name', 'sujet', 'pp', 'role', 'is_staff', 'is_active', 'is_superuser', 'date_joined', 'last_login')
+        if request.user.role == 'admin' or request.user.is_superuser:
+            users = list(User.objects.values(*fileds))
+        else:
+            users = list(User.objects.filter(id=request.user.id).values(*fileds))
         return JsonResponse({'users': users}, status=200)
     return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
 
 @csrf_exempt
+@api_permission_required('users.change_user', required_role='admin')
 def modifier_user(request, user_id):
     user = get_object_or_404(User, id=user_id)
     if request.method == 'PUT':
@@ -113,6 +126,7 @@ def modifier_user(request, user_id):
 
 
 @csrf_exempt
+@api_permission_required('users.delete_user', required_role='admin')
 def supprimer_user(request, user_id):
     user = get_object_or_404(User, id=user_id)
     if request.method == 'DELETE':
@@ -120,6 +134,77 @@ def supprimer_user(request, user_id):
         return JsonResponse({'message': 'Utilisateur supprimé avec succès'}, status=200)
     return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
 
+@csrf_exempt
+def inscription_user(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            username = data.get('username')
+            email = data.get('email')
+            password_raw = data.get('password')
+
+            # Validation basique
+            if not username or not email or not password_raw:
+                return JsonResponse({'error': 'Champs requis manquants (username, email, password)'}, status=400)
+
+            password = make_password(password_raw)
+
+            user = User.objects.create(
+                username=username,
+                email=email,
+                password=password,
+                role='user',  # Rôle par défaut
+                is_active=True
+            )
+
+            return JsonResponse({
+                'message': 'Inscription réussie',
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'role': user.role,
+                    'date_joined': user.date_joined.strftime('%Y-%m-%d %H:%M:%S'),
+                }
+            }, status=201)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Données JSON invalides'}, status=400)
+
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+@csrf_exempt
+def connexion_user(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            username = data.get('username')
+            password = data.get('password')
+
+            user = authenticate(request, username=username, password=password)
+
+            if user is not None:
+                login(request, user)
+                return JsonResponse({
+                    'message': 'Connexion réussie',
+                    'user': {
+                        'id': user.id,
+                        'username': user.username,
+                        'email': user.email,
+                        'role': user.role,
+                    }
+                }, status=200)
+            else:
+                return JsonResponse({'error': 'Identifiants invalides'}, status=401)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Données JSON invalides'}, status=400)
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+@csrf_exempt
+def deconnexion_user(request):
+    if request.method == 'POST':
+        logout(request)
+        return JsonResponse({'message': 'Déconnexion réussie'}, status=200)
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
 
 
 @csrf_exempt

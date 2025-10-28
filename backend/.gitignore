@@ -42,3 +42,4 @@ coverage.xml
 
 # Autres fichiers sensibles éventuels
 secret_*.txt
+.env

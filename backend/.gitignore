@@ -1,1 +1,44 @@
 +.env
+# Environnement virtuel
+.venv/
+venv/
+__pycache__/
+
+# Fichiers de configuration locaux
+.env
+*.env
+
+# Base de données locale
+db.sqlite3
+
+# Fichiers de logs et temporaires
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.mo
+
+# Dossiers de build et caches
+build/
+dist/
+*.egg-info/
+*.bak
+
+# VSCode / IDE
+.vscode/
+.idea/
+
+# Fichiers de test ou coverage
+htmlcov/
+.coverage
+*.cover
+*.py,cover
+.cache
+nosetests.xml
+coverage.xml
+*.spec
+
+# Autres fichiers sensibles éventuels
+secret_*.txt

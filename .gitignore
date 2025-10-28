@@ -1,2 +1,18 @@
-backend/.env
-backend/.env
+# Environment variables
+.env
+*.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Django
+*.log
+db.sqlite3
+media/
+
+# Node
+node_modules/

@@ -119,3 +119,12 @@ Projet réalisé par Victor, Arthur et Mathias dans le cadre du TP1 - Gestion de
 
 Ce projet est libre d’utilisation dans le cadre académique.
 Aucune restriction de diffusion, à condition de citer la source d’origine.
+
+
+Lancer Redis et Celery : 
+Aller dans le dossier redis de votre pc (C:\Program Files\Redis), puis lancer redis dans un cmd "./redis-server.exe"
+Ensuite lancer le worker celery depuis le backend avec eventlet "celery -A config worker -l info -P  eventlet"
+Puis vous pouvez tester la task d'envoie d'email dans le shell de django : 
+ - python manage.py shell
+ >> from users.tasks import send_email_async
+ >> send_email_async.delay('Test Celery', 'Asynchrone Gmail OK ✅', 'tonemail')

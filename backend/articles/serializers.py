@@ -1,7 +1,11 @@
 from rest_framework import serializers
 from .models import Article
 
+
 class ArticleSerializer(serializers.ModelSerializer):
+    author_username = serializers.CharField(source='author.username', read_only=True)
+
     class Meta:
         model = Article
-        fields = ['id', 'title', 'content', 'author', 'created_at']
+        fields = ['id', 'title', 'content', 'author', 'author_username', 'created_at']
+        read_only_fields = ['id', 'created_at', 'author_username']

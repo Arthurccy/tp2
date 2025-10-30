@@ -1,278 +1,248 @@
-from django.http import JsonResponse
-from django.contrib.auth import authenticate, login, logout
-from users.decorators import api_permission_required
-from django.views.decorators.csrf import csrf_exempt
+from rest_framework import viewsets, status, generics
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import authenticate, get_user_model
 from django.shortcuts import get_object_or_404
-from django.contrib.auth.hashers import make_password
-from django.utils.http import urlsafe_base64_encode
-from django.utils.encoding import force_bytes
-from .models import User
-from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from .tasks import send_reset_password_email
-from .utils import generate_password_reset_link
-from django.contrib.auth import get_user_model
-import json
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_decode
 
+from .serializers import (
+    UserSerializer, UserCreateSerializer, RegisterSerializer,
+    ChangePasswordSerializer, PasswordResetRequestSerializer,
+    PasswordResetConfirmSerializer
+)
+from .permissions import IsAdminUser, IsOwnerOrAdminForUser
+from .utils import generate_password_reset_link
+from .tasks import send_reset_password_email
 
 User = get_user_model()
-token_generator = PasswordResetTokenGenerator()
 
-@csrf_exempt
-@api_permission_required('users.view_user', required_role='admin')
-def creer_user(request):
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            username = data.get('username')
-            email = data.get('email')
-            password_raw = data.get('password')
-            first_name = data.get('first_name', '')
-            last_name = data.get('last_name', '')
-            sujet = data.get('sujet', '')
-            pp = data.get('pp', '')
-            role = data.get('role', 'user')
-            is_staff = data.get('is_staff', False)
-            is_active = data.get('is_active', True)
-            is_superuser = data.get('is_superuser', False)
-            last_login = data.get('last_login', None)
 
-            # Validation basique
-            if not username or not email or not password_raw:
-                return JsonResponse({'error': 'Champs requis manquants (username, email, password)'}, status=400)
-
-            password = make_password(password_raw)
-
-            if role == 'admin' or is_superuser:
-                if not request.user.is_authenticated or request.user.role != 'admin':
-                    return JsonResponse({'error': 'Seul un administrateur peut créer un utilisateur avec le rôle admin.'}, status=403)
-
-            user = User.objects.create(
-                username=username,
-                email=email,
-                first_name=first_name,
-                last_name=last_name,
-                sujet=sujet,
-                pp=pp,
-                role=role,
-                password=password,
-                is_staff=is_staff,
-                is_active=is_active,
-                is_superuser=is_superuser,
-                last_login=last_login
-            )
-
-            return JsonResponse({
-                'message': 'Utilisateur créé avec succès',
-                'user': {
-                    'id': user.id,
-                    'username': user.username,
-                    'email': user.email,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
-                    'sujet': user.sujet,
-                    'pp': user.pp,
-                    'role': user.role,
-                    'is_staff': user.is_staff,
-                    'is_active': user.is_active,
-                    'is_superuser': user.is_superuser,
-                    'date_joined': user.date_joined.strftime('%Y-%m-%d %H:%M:%S'),
-                    'last_login': user.last_login.strftime('%Y-%m-%d %H:%M:%S') if user.last_login else None
-                }
-            }, status=201)
-        except json.JSONDecodeError:
-            return JsonResponse({'error': 'Données JSON invalides'}, status=400)
-
-    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
-
-@csrf_exempt
-@api_permission_required('users.view_user')
-def liste_users(request):
-    if request.method == 'GET':
-        fileds = ('id', 'username', 'email', 'first_name', 'last_name', 'sujet', 'pp', 'role', 'is_staff', 'is_active', 'is_superuser', 'date_joined', 'last_login')
-        if request.user.role == 'admin' or request.user.is_superuser:
-            users = list(User.objects.values(*fileds))
-        else:
-            users = list(User.objects.filter(id=request.user.id).values(*fileds))
-        return JsonResponse({'users': users}, status=200)
-    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
-
-@csrf_exempt
-@api_permission_required('users.change_user', required_role='admin')
-def modifier_user(request, user_id):
-    user = get_object_or_404(User, id=user_id)
-    if request.method == 'PUT':
-        try:
-            data = json.loads(request.body)
-            user.username = data.get('username', user.username)
-            user.email = data.get('email', user.email)
-            password_raw = data.get('password', None)
-            if password_raw:
-                user.password = make_password(password_raw)
-            user.first_name = data.get('first_name', user.first_name)
-            user.last_name = data.get('last_name', user.last_name)
-            user.sujet = data.get('sujet', user.sujet)
-            user.pp = data.get('pp', user.pp)
-            user.role = data.get('role', user.role)
-            user.is_staff = data.get('is_staff', user.is_staff)
-            user.is_active = data.get('is_active', user.is_active)
-            user.is_superuser = data.get('is_superuser', user.is_superuser)
-            user.last_login = data.get('last_login', user.last_login)
-
+class UserViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet pour gérer les utilisateurs.
+    - Liste: Admin voit tous, User voit uniquement son profil
+    - Création: Admin uniquement
+    - Modification/Suppression: Admin ou propriétaire
+    """
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    
+    def get_permissions(self):
+        """Permissions dynamiques selon l'action"""
+        if self.action == 'create':
+            # Seul l'admin peut créer un utilisateur via cette vue
+            return [IsAdminUser()]
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            # Admin ou propriétaire
+            return [IsAuthenticated(), IsOwnerOrAdminForUser()]
+        elif self.action == 'list':
+            # Authentifié uniquement
+            return [IsAuthenticated()]
+        return [IsAuthenticated()]
+    
+    def get_serializer_class(self):
+        """Utiliser le bon serializer selon l'action"""
+        if self.action == 'create':
+            return UserCreateSerializer
+        return UserSerializer
+    
+    def get_queryset(self):
+        """
+        Admin ou superuser voit tous les utilisateurs,
+        User voit uniquement son profil
+        """
+        user = self.request.user
+        if user.role == 'admin' or user.is_superuser:
+            return User.objects.all()
+        return User.objects.filter(id=user.id)
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def me(self, request):
+        """Endpoint pour récupérer son propre profil"""
+        serializer = self.get_serializer(request.user)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def change_password(self, request):
+        """Endpoint pour changer son mot de passe"""
+        serializer = ChangePasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+            
+            # Vérifier l'ancien mot de passe
+            if not user.check_password(serializer.validated_data['old_password']):
+                return Response(
+                    {'old_password': 'Mot de passe incorrect'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Définir le nouveau mot de passe
+            user.set_password(serializer.validated_data['new_password'])
             user.save()
+            
+            return Response({'message': 'Mot de passe changé avec succès'}, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            return JsonResponse({'message': 'Utilisateur modifié avec succès'}, status=200)
-        except json.JSONDecodeError:
-            return JsonResponse({'error': 'Données JSON invalides'}, status=400)
+
+class RegisterView(generics.CreateAPIView):
+    """Endpoint public pour l'inscription (rôle user uniquement)"""
+    queryset = User.objects.all()
+    permission_classes = [AllowAny]
+    serializer_class = RegisterSerializer
+    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        
+        # Générer les tokens JWT
+        refresh = RefreshToken.for_user(user)
+        
+        return Response({
+            'message': 'Inscription réussie',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'role': user.role,
+            },
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }
+        }, status=status.HTTP_201_CREATED)
 
 
-@csrf_exempt
-@api_permission_required('users.delete_user', required_role='admin')
-def supprimer_user(request, user_id):
-    user = get_object_or_404(User, id=user_id)
-    if request.method == 'DELETE':
-        user.delete()
-        return JsonResponse({'message': 'Utilisateur supprimé avec succès'}, status=200)
-    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
-
-@csrf_exempt
-def inscription_user(request):
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            username = data.get('username')
-            email = data.get('email')
-            password_raw = data.get('password')
-
-            # Validation basique
-            if not username or not email or not password_raw:
-                return JsonResponse({'error': 'Champs requis manquants (username, email, password)'}, status=400)
-
-            password = make_password(password_raw)
-
-            user = User.objects.create(
-                username=username,
-                email=email,
-                password=password,
-                role='user',  # Rôle par défaut
-                is_active=True
+class LoginView(generics.GenericAPIView):
+    """Endpoint public pour la connexion"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        username = request.data.get('username')
+        password = request.data.get('password')
+        
+        if not username or not password:
+            return Response(
+                {'error': 'Username et password requis'},
+                status=status.HTTP_400_BAD_REQUEST
             )
-
-            return JsonResponse({
-                'message': 'Inscription réussie',
+        
+        user = authenticate(username=username, password=password)
+        
+        if user is not None:
+            # Générer les tokens JWT
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'message': 'Connexion réussie',
                 'user': {
                     'id': user.id,
                     'username': user.username,
                     'email': user.email,
                     'role': user.role,
-                    'date_joined': user.date_joined.strftime('%Y-%m-%d %H:%M:%S'),
+                },
+                'tokens': {
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
                 }
-            }, status=201)
-        except json.JSONDecodeError:
-            return JsonResponse({'error': 'Données JSON invalides'}, status=400)
+            }, status=status.HTTP_200_OK)
+        
+        return Response(
+            {'error': 'Identifiants invalides'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
 
-    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
 
-@csrf_exempt
-def connexion_user(request):
-    if request.method == 'POST':
+class LogoutView(generics.GenericAPIView):
+    """Endpoint pour la déconnexion (blacklist du refresh token)"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
         try:
-            data = json.loads(request.body)
-            username = data.get('username')
-            password = data.get('password')
-
-            user = authenticate(request, username=username, password=password)
-
-            if user is not None:
-                login(request, user)
-                return JsonResponse({
-                    'message': 'Connexion réussie',
-                    'user': {
-                        'id': user.id,
-                        'username': user.username,
-                        'email': user.email,
-                        'role': user.role,
-                    }
-                }, status=200)
-            else:
-                return JsonResponse({'error': 'Identifiants invalides'}, status=401)
-        except json.JSONDecodeError:
-            return JsonResponse({'error': 'Données JSON invalides'}, status=400)
-    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
-
-@csrf_exempt
-def deconnexion_user(request):
-    if request.method == 'POST':
-        logout(request)
-        return JsonResponse({'message': 'Déconnexion réussie'}, status=200)
-    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+            refresh_token = request.data.get('refresh')
+            if refresh_token:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            return Response({'message': 'Déconnexion réussie'}, status=status.HTTP_200_OK)
+        except Exception:
+            return Response({'error': 'Token invalide'}, status=status.HTTP_400_BAD_REQUEST)
 
 
-@csrf_exempt
-def demander_reset_password(request):
-    if request.method == 'POST':
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def password_reset_request(request):
+    """Demander un reset de mot de passe"""
+    serializer = PasswordResetRequestSerializer(data=request.data)
+    if serializer.is_valid():
+        email = serializer.validated_data['email']
+        
         try:
-            data = json.loads(request.body)
-            email = data.get('email')
-            if not email:
-                return JsonResponse({'error': 'Email requis'}, status=400)
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # Par sécurité, on ne révèle pas si l'email existe
+            return Response(
+                {'message': 'Si cet email existe, un lien de réinitialisation a été envoyé'},
+                status=status.HTTP_200_OK
+            )
+        
+        # Génère le lien de réinitialisation
+        reset_link = generate_password_reset_link(user, "http://localhost:3000/reset-password")
+        
+        subject = "Réinitialisation de votre mot de passe"
+        body = f"""
+        Bonjour {user.first_name or user.username},
 
-            try:
-                user = User.objects.get(email=email)
-            except User.DoesNotExist:
-                return JsonResponse({'error': 'Aucun utilisateur avec cet email'}, status=404)
+        Vous avez demandé la réinitialisation de votre mot de passe.
+        Cliquez sur le lien ci-dessous pour en définir un nouveau :
 
-            # Génère le lien de réinitialisation
-            reset_link = generate_password_reset_link(user, "http://localhost:3000/reset-password")
+        {reset_link}
 
-            subject = "Réinitialisation de votre mot de passe"
-            body = f"""
-                    Bonjour {user.first_name or user.username},
-
-                    Vous avez demandé la réinitialisation de votre mot de passe.
-                    Cliquez sur le lien ci-dessous pour en définir un nouveau :
-
-                    {reset_link}
-
-                    Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet e-mail.
-                    """
-            # Envoi asynchrone via Celery
-            send_reset_password_email.delay(subject, body, user.email)
-
-            return JsonResponse({'message': 'E-mail de réinitialisation envoyé'}, status=200)
-        except json.JSONDecodeError:
-            return JsonResponse({'error': 'JSON invalide'}, status=400)
-    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+        Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet e-mail.
+        """
+        
+        # Envoi asynchrone via Celery
+        send_reset_password_email.delay(subject, body, user.email)
+        
+        return Response(
+            {'message': 'Si cet email existe, un lien de réinitialisation a été envoyé'},
+            status=status.HTTP_200_OK
+        )
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@csrf_exempt
-def reset_password_confirm(request, uidb64, token):
-    if request.method == 'POST':
-        from django.utils.http import urlsafe_base64_decode
-        from django.contrib.auth.tokens import default_token_generator
-        from django.contrib.auth.hashers import make_password
-
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def password_reset_confirm(request, uidb64, token):
+    """Confirmer le reset de mot de passe"""
+    serializer = PasswordResetConfirmSerializer(data=request.data)
+    if serializer.is_valid():
         try:
-            data = json.loads(request.body)
-            new_password = data.get('password')
-            if not new_password:
-                return JsonResponse({'error': 'Mot de passe requis'}, status=400)
-
             uid = urlsafe_base64_decode(uidb64).decode()
             user = User.objects.get(pk=uid)
-
+            
             if not default_token_generator.check_token(user, token):
-                return JsonResponse({'error': 'Token invalide ou expiré'}, status=400)
-
-            user.password = make_password(new_password)
+                return Response(
+                    {'error': 'Token invalide ou expiré'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            user.set_password(serializer.validated_data['password'])
             user.save()
-
-            return JsonResponse({'message': 'Mot de passe réinitialisé avec succès'}, status=200)
-
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=400)
-
-    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
-
-
-
-
+            
+            return Response(
+                {'message': 'Mot de passe réinitialisé avec succès'},
+                status=status.HTTP_200_OK
+            )
+        
+        except (User.DoesNotExist, ValueError, TypeError):
+            return Response(
+                {'error': 'Lien invalide'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

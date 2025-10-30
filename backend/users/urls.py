@@ -1,15 +1,20 @@
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from . import views
 
-urlpatterns = [
-    path('auth/inscription/', views.inscription_user, name='inscription'),
-    path('auth/connexion/', views.connexion_user, name='connexion'),
-    path('auth/deconnexion/', views.deconnexion_user, name='deconnexion'),
+router = DefaultRouter()
+router.register(r'', views.UserViewSet, basename='user')
 
-    path('creer/', views.creer_user, name='creer_user'),
-    path('liste/', views.liste_users, name='liste_users'),
-    path('modifier/<int:user_id>/', views.modifier_user, name='modifier_user'),
-    path('supprimer/<int:user_id>/', views.supprimer_user, name='supprimer_user'),
-    path('reset-password/', views.demander_reset_password, name='demander_reset_password'),
-    path('reset-password/<uidb64>/<token>/', views.reset_password_confirm, name='reset_password_confirm'),
+urlpatterns = [
+    # Auth endpoints
+    path('register/', views.RegisterView.as_view(), name='register'),
+    path('login/', views.LoginView.as_view(), name='login'),
+    path('logout/', views.LogoutView.as_view(), name='logout'),
+    
+    # Password reset
+    path('password-reset/', views.password_reset_request, name='password_reset_request'),
+    path('password-reset-confirm/<uidb64>/<token>/', views.password_reset_confirm, name='password_reset_confirm'),
+    
+    # User CRUD via ViewSet
+    path('', include(router.urls)),
 ]

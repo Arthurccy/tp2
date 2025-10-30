@@ -49,7 +49,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_article(request):
-     """
+    """
     Crée un nouvel article.
     
     Réponses HTTP:
@@ -94,7 +94,7 @@ def create_article(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_articles(request):
-     """
+    """
     Récupère la liste de tous les articles.
     
     Réponses HTTP:

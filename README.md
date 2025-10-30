@@ -128,3 +128,12 @@ Puis vous pouvez tester la task d'envoie d'email dans le shell de django :
  - python manage.py shell
  >> from users.tasks import send_email_async
  >> send_email_async.delay('Test Celery', 'Asynchrone Gmail OK ✅', 'tonemail')
+
+
+Commandes pour démarrer le service : 
+
+cd backend
+pip install -r requirements.txt
+python manage.py makemigrations
+python manage.py migrate
+python manage.py runserver

@@ -48,7 +48,9 @@ def create_article(request):
         400: Erreur de validation (titre/contenu invalide)
         401: Utilisateur non authentifié
     """
-    serializer = ArticleSerializer(data=request.data)
+    data = request.data.copy()
+    data['author'] = request.user.id
+    serializer = ArticleSerializer(data=data)
     
     # ❌ Validation échouée
     if not serializer.is_valid():
@@ -58,8 +60,8 @@ def create_article(request):
             "details": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
     
-    # ✅ Sauvegarde avec l'auteur connecté
-    serializer.save(author=request.user)
+    # Sauvegarde avec l'auteur connecté
+    serializer.save()
     
     return Response({
         "message": "Article créé avec succès",
@@ -133,9 +135,12 @@ def update_article(request, pk):
             }
         }, status=status.HTTP_403_FORBIDDEN)
     
+    data = request.data.copy()
+    data['author'] = request.user.id
+
     # Validation des données (partial=True pour PATCH)
     partial = request.method == 'PATCH'
-    serializer = ArticleSerializer(article, data=request.data, partial=partial)
+    serializer = ArticleSerializer(article, data=data, partial=partial)
     
     # ❌ Erreur de validation
     if not serializer.is_valid():

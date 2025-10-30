@@ -21,3 +21,4 @@ billiard
 kombu
 eventlet
 pytest
+flower

@@ -129,6 +129,12 @@ Puis vous pouvez tester la task d'envoie d'email dans le shell de django :
  >> from users.tasks import send_email_async
  >> send_email_async.delay('Test Celery', 'Asynchrone Gmail OK ✅', 'tonemail')
 
+ Lancer flower :
+ avoir son serveur redis en écoute
+ Lancer le worker celery : "celery -A config worker -l info -P  eventlet"
+ Puis flower : celery -A config flower --port=5555 ( éditez le port si besoin )
+ Puis accéder à la page web de Flower : http://localhost:5555/ ( avec le port que vous avez spécifiez dans la commande précédente)
+
 
 Commandes pour démarrer le service : 
 

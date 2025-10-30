@@ -20,3 +20,4 @@ celery
 billiard
 kombu
 eventlet
+flower

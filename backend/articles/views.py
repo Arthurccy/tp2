@@ -3,6 +3,10 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+
 from .models import Article
 from .serializers import ArticleSerializer
 from users.permissions import IsOwnerOrAdmin, IsAdminOrReadOnly
@@ -39,27 +43,13 @@ class ArticleViewSet(viewsets.ModelViewSet):
         serializer.save(author=self.request.user)
 
 
-# Si vous voulez garder des vues fonction (optionnel)
-# Mais je recommande d'utiliser uniquement le ViewSet ci-dessus
-
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from django.shortcuts import get_object_or_404
-
-
 # ========================================
 # ➕ CRÉER UN ARTICLE
 # ========================================
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_article(request):
-    """Crée un nouvel article"""
-    serializer = ArticleSerializer(data=request.data, context={'request': request})
-    if serializer.is_valid():
-        serializer.save(author=request.user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    """
+     """
     Crée un nouvel article.
     
     Réponses HTTP:
@@ -67,6 +57,13 @@ def create_article(request):
         400: Erreur de validation (titre/contenu invalide)
         401: Utilisateur non authentifié
     """
+
+    serializer = ArticleSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        serializer.save(author=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     data = request.data.copy()
     data['author'] = request.user.id
     serializer = ArticleSerializer(data=data)
@@ -97,14 +94,14 @@ def create_article(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_articles(request):
-    """Récupère la liste de tous les articles"""
-    articles = Article.objects.all()
-    """
+     """
     Récupère la liste de tous les articles.
     
     Réponses HTTP:
         200: Liste des articles récupérée
     """
+
+    articles = Article.objects.all()
     articles = Article.objects.all().order_by('-created_at')
     serializer = ArticleSerializer(articles, many=True)
     
@@ -117,31 +114,6 @@ def list_articles(request):
         }
     }, status=status.HTTP_200_OK)
 
-
-@api_view(['PUT', 'PATCH'])
-@permission_classes([IsAuthenticated, IsOwnerOrAdmin])
-def update_article(request, pk):
-    """Met à jour un article (propriétaire ou admin uniquement)"""
-    article = get_object_or_404(Article, pk=pk)
-    
-    # Vérifier les permissions au niveau objet
-    permission = IsOwnerOrAdmin()
-    if not permission.has_object_permission(request, None, article):
-        return Response(
-            {'error': 'Vous n\'êtes pas autorisé à modifier cet article'},
-            status=status.HTTP_403_FORBIDDEN
-        )
-    
-    serializer = ArticleSerializer(
-        article, 
-        data=request.data, 
-        partial=True,
-        context={'request': request}
-    )
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 # ========================================
 # ✏️ MODIFIER UN ARTICLE
 # ========================================
@@ -157,6 +129,14 @@ def update_article(request, pk):
         403: L'utilisateur n'est pas l'auteur
         404: Article introuvable
     """
+
+    permission = IsOwnerOrAdmin()
+    if not permission.has_object_permission(request, None, article):
+        return Response(
+            {'error': 'Vous n\'êtes pas autorisé à modifier cet article'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
     # ❌ Vérifie que l'article existe
     try:
         article = Article.objects.get(pk=pk)
@@ -212,24 +192,6 @@ def update_article(request, pk):
 # 🗑️ SUPPRIMER UN ARTICLE
 # ========================================
 @api_view(['DELETE'])
-@permission_classes([IsAuthenticated, IsOwnerOrAdmin])
-def delete_article(request, pk):
-    """Supprime un article (propriétaire ou admin uniquement)"""
-    article = get_object_or_404(Article, pk=pk)
-    
-    # Vérifier les permissions au niveau objet
-    permission = IsOwnerOrAdmin()
-    if not permission.has_object_permission(request, None, article):
-        return Response(
-            {'error': 'Vous n\'êtes pas autorisé à supprimer cet article'},
-            status=status.HTTP_403_FORBIDDEN
-        )
-    
-    article.delete()
-    return Response(
-        {'message': 'Article supprimé avec succès'},
-        status=status.HTTP_204_NO_CONTENT
-    )
 @permission_classes([IsAuthenticated])
 def delete_article(request, pk):
     """
@@ -240,6 +202,14 @@ def delete_article(request, pk):
         403: L'utilisateur n'est pas l'auteur
         404: Article introuvable
     """
+
+    permission = IsOwnerOrAdmin()
+    if not permission.has_object_permission(request, None, article):
+        return Response(
+            {'error': 'Vous n\'êtes pas autorisé à supprimer cet article'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
     # ❌ Vérifie que l'article existe
     try:
         article = Article.objects.get(pk=pk)

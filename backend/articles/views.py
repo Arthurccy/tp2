@@ -11,6 +11,8 @@ from .models import Article
 from .serializers import ArticleSerializer
 from users.permissions import IsOwnerOrAdmin, IsAdminOrReadOnly
 
+from .pagination import StandardResultsSetPagination
+
 
 # ========================================
 # 🔧 ViewSet (pour les routes automatiques)
@@ -25,6 +27,7 @@ class ArticleViewSet(viewsets.ModelViewSet):
     queryset = Article.objects.all()
     serializer_class = ArticleSerializer
     permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
+    pagination_class = StandardResultsSetPagination
     
     # Filtrage et recherche
     filter_backends = [
@@ -104,15 +107,12 @@ def list_articles(request):
     articles = Article.objects.all()
     articles = Article.objects.all().order_by('-created_at')
     serializer = ArticleSerializer(articles, many=True)
+
+    paginator = StandardResultsSetPagination()
+    paginated_articles = paginator.paginate_queryset(articles, request)
+    serializer = ArticleSerializer(paginated_articles, many=True)
     
-    return Response({
-        "message": "Articles récupérés avec succès",
-        "status_code": status.HTTP_200_OK,
-        "data": {
-            "count": articles.count(),
-            "articles": serializer.data
-        }
-    }, status=status.HTTP_200_OK)
+    return paginator.get_paginated_response(serializer.data)
 
 # ========================================
 # ✏️ MODIFIER UN ARTICLE

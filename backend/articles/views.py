@@ -130,14 +130,7 @@ def update_article(request, pk):
         404: Article introuvable
     """
 
-    permission = IsOwnerOrAdmin()
-    if not permission.has_object_permission(request, None, article):
-        return Response(
-            {'error': 'Vous n\'êtes pas autorisé à modifier cet article'},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    # ❌ Vérifie que l'article existe
+    # ✅ Vérifie que l'article existe
     try:
         article = Article.objects.get(pk=pk)
     except Article.DoesNotExist:
@@ -149,7 +142,7 @@ def update_article(request, pk):
             }
         }, status=status.HTTP_404_NOT_FOUND)
     
-    # ❌ Vérifie que l'utilisateur est l'auteur
+    # ✅ Vérifie que l'utilisateur est l'auteur
     if article.author != request.user:
         return Response({
             "error": "Vous n'avez pas la permission de modifier cet article",
@@ -203,14 +196,7 @@ def delete_article(request, pk):
         404: Article introuvable
     """
 
-    permission = IsOwnerOrAdmin()
-    if not permission.has_object_permission(request, None, article):
-        return Response(
-            {'error': 'Vous n\'êtes pas autorisé à supprimer cet article'},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    # ❌ Vérifie que l'article existe
+    # ✅ Vérifie que l'article existe
     try:
         article = Article.objects.get(pk=pk)
     except Article.DoesNotExist:
@@ -222,7 +208,7 @@ def delete_article(request, pk):
             }
         }, status=status.HTTP_404_NOT_FOUND)
     
-    # ❌ Vérifie que l'utilisateur est l'auteur
+    # ✅ Vérifie que l'utilisateur est l'auteur
     if article.author != request.user:
         return Response({
             "error": "Vous n'avez pas la permission de supprimer cet article",
@@ -245,3 +231,4 @@ def delete_article(request, pk):
             "deleted_article": article_data
         }
     }, status=status.HTTP_200_OK)
+

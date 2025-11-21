@@ -28,3 +28,5 @@ gunicorn
 whitenoise
 dj-database-url
 environs
+pytest-django
+pytest-cov

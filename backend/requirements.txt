@@ -25,3 +25,4 @@ flower
 gunicorn
 whitenoise
 dj-database-url
+environs

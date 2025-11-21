@@ -27,8 +27,7 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-unsafe-key")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "True") == "True"
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS","127.0.0.1,localhost,tp2-rpcw.onrender.com").split(",")
-
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", default=["127.0.0.1", "localhost", "tp2-rpcw.onrender.com"])
 
 # Application definition
 

@@ -22,3 +22,6 @@ kombu
 eventlet
 pytest
 flower
+gunicorn
+whitenoise
+dj-database-url

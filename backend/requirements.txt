@@ -22,3 +22,5 @@ kombu
 eventlet
 pytest
 flower
+drf-spectacular 
+drf-spectacular-sidecar
